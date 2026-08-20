@@ -58,6 +58,8 @@ input{font:inherit;}
 <script>
 /* ---------------- constants ---------------- */
 const KEY = "stint-data-v1";
+const VERSION = "1.5";
+const BUILT = "2026-08-20";
 const C = {line:"#2C3340",purple:"#A17BFF",green:"#3FBF7F",amber:"#F5A524",red:"#E5484B",
            teal:"#3FB6C4",text:"#E8EAF0",muted:"#79839A",surface:"#1B202B"};
 const glow=(c,s)=>`0 0 ${s*0.5}px ${c}44, 0 0 ${s*1.1}px ${c}1A`;
@@ -380,7 +382,7 @@ function render(){
     <div class="mono mt2" style="font-size:10px;color:var(--muted)">Tap to select all. Email it to yourself now and then.</div>`);
 
   h.push(`<div class="row mt8">
-    <span class="mono" style="font-size:10px;color:var(--muted)">Never miss twice.</span>
+    <span class="mono" style="font-size:10px;color:var(--muted)">v${VERSION} · ${BUILT}</span>
     <span style="display:flex;gap:14px">
       <button class="link" style="font-size:9px" data-act="sample">Sample</button>
       <button class="link" style="font-size:9px;color:${confirmWipe?C.red:C.muted}" data-act="wipe">${confirmWipe?"Tap to confirm":"Wipe"}</button>
@@ -397,13 +399,13 @@ function render(){
 /* ---------------- backup ---------------- */
 let backupMsg="";
 async function doBackup(){
-  const name="stint-"+today+".json";
+  const name="stint-"+today+".txt";
   const json=JSON.stringify(S,null,2);
   // 1. share sheet with a file attached — must fire inside the click, no render first
   try{
-    const file=new File([json],name,{type:"application/json"});
+    const file=new File([json],name,{type:"text/plain"});
     if(navigator.canShare && navigator.canShare({files:[file]})){
-      await navigator.share({files:[file],title:name});
+      await navigator.share({files:[file],title:name,text:""});
       backupMsg="sent to share sheet"; render(); return;
     }
   }catch(e){ if(e && e.name==="AbortError"){backupMsg="cancelled";render();return;} }
@@ -416,7 +418,7 @@ async function doBackup(){
   }catch(e){ if(e && e.name==="AbortError"){backupMsg="cancelled";render();return;} }
   // 3. plain download
   try{
-    const url=URL.createObjectURL(new Blob([json],{type:"application/json"}));
+    const url=URL.createObjectURL(new Blob([json],{type:"text/plain"}));
     const a=document.createElement("a"); a.href=url; a.download=name; a.rel="noopener";
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(()=>URL.revokeObjectURL(url),3000);
