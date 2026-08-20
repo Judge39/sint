@@ -370,7 +370,8 @@ function render(){
   h.push(`<div class="row mt6">
     <span style="display:flex;gap:14px">
       <button class="link" data-act="backup">Back up</button>
-      <button class="link" data-act="export">Export data</button></span>
+      <button class="link" data-act="export">Export data</button>
+      ${backupMsg?`<span class="mono" style="font-size:10px;color:var(--muted)">${backupMsg}</span>`:""}</span>
     <span class="mono" style="font-size:11px;color:${storageOk?C.green:C.red}">
       ${!storageOk?"NOT SAVING":S.lastSave?"saved "+new Date(S.lastSave).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}):"nothing saved yet"}</span></div>`);
   if(showExport) h.push(`<textarea readonly class="mt2" style="width:100%;height:130px;background:var(--surface);
@@ -391,6 +392,39 @@ function render(){
   app.innerHTML=h.join("");
   if(aid){const el=document.getElementById(aid); if(el){el.focus();
     if(pos!=null&&el.setSelectionRange){try{el.setSelectionRange(pos,pos)}catch(e){}}}}
+}
+
+/* ---------------- backup ---------------- */
+let backupMsg="";
+async function doBackup(){
+  const name="stint-"+today+".json";
+  const json=JSON.stringify(S,null,2);
+  backupMsg="working…"; render();
+  // 1. share sheet with a file attached
+  try{
+    const file=new File([json],name,{type:"application/json"});
+    if(navigator.canShare && navigator.canShare({files:[file]})){
+      await navigator.share({files:[file],title:name});
+      backupMsg="sent to share sheet"; render(); return;
+    }
+  }catch(e){ if(e && e.name==="AbortError"){backupMsg="cancelled";render();return;} }
+  // 2. share sheet with text only
+  try{
+    if(navigator.share){
+      await navigator.share({title:name,text:json});
+      backupMsg="sent as text"; render(); return;
+    }
+  }catch(e){ if(e && e.name==="AbortError"){backupMsg="cancelled";render();return;} }
+  // 3. plain download
+  try{
+    const url=URL.createObjectURL(new Blob([json],{type:"application/json"}));
+    const a=document.createElement("a"); a.href=url; a.download=name; a.rel="noopener";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),3000);
+    backupMsg="downloaded "+name; render(); return;
+  }catch(e){}
+  // 4. last resort: show the text to copy
+  showExport=true; backupMsg="couldn't share — copy the text below"; render();
 }
 
 /* ---------------- events ---------------- */
@@ -434,18 +468,7 @@ document.addEventListener("click",e=>{
   else if(a==="claim"){S.claimed=(S.claimed||0)+1;save();render()}
   else if(a==="roadmap"){showRoadmap=!showRoadmap;render()}
   else if(a==="export"){showExport=!showExport;render()}
-  else if(a==="backup"){
-    const name="stint-"+today+".json";
-    const json=JSON.stringify(S,null,2);
-    const file=(()=>{try{return new File([json],name,{type:"application/json"})}catch(e){return null}})();
-    if(file && navigator.canShare && navigator.canShare({files:[file]})){
-      navigator.share({files:[file],title:name}).catch(()=>{});
-    } else {
-      const url=URL.createObjectURL(new Blob([json],{type:"application/json"}));
-      const a2=document.createElement("a"); a2.href=url; a2.download=name;
-      document.body.appendChild(a2); a2.click(); a2.remove();
-      setTimeout(()=>URL.revokeObjectURL(url),2000);
-    }}
+  else if(a==="backup"){ doBackup(); }
   else if(a==="sample"){
     const seed=[10,10,9,10,9,9,8,9,8,null,8,7,9,7],days={};
     for(let i=0;i<14;i++){if(seed[i]===null)continue;
