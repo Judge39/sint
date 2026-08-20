@@ -399,8 +399,7 @@ let backupMsg="";
 async function doBackup(){
   const name="stint-"+today+".json";
   const json=JSON.stringify(S,null,2);
-  backupMsg="working…"; render();
-  // 1. share sheet with a file attached
+  // 1. share sheet with a file attached — must fire inside the click, no render first
   try{
     const file=new File([json],name,{type:"application/json"});
     if(navigator.canShare && navigator.canShare({files:[file]})){
