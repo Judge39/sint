@@ -100,9 +100,9 @@ function load(){
 }
 function save(){
   try{
+    S.lastSave=Date.now();
     localStorage.setItem(KEY,JSON.stringify(S));
     storageOk=true;
-    lastSave=new Date().toLocaleTimeString([], {hour:"numeric",minute:"2-digit"});
   }catch(e){storageOk=false;}
 }
 let S=load();
@@ -368,9 +368,11 @@ function render(){
 
   /* footer */
   h.push(`<div class="row mt6">
-    <button class="link" data-act="export">Export data</button>
-    <span class="mono" style="font-size:10px;color:${storageOk?"var(--muted)":C.red}">
-      ${storageOk?(lastSave?"saved "+lastSave:""):"not saving"}</span></div>`);
+    <span style="display:flex;gap:14px">
+      <button class="link" data-act="backup">Back up</button>
+      <button class="link" data-act="export">Export data</button></span>
+    <span class="mono" style="font-size:11px;color:${storageOk?C.green:C.red}">
+      ${!storageOk?"NOT SAVING":S.lastSave?"saved "+new Date(S.lastSave).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}):"nothing saved yet"}</span></div>`);
   if(showExport) h.push(`<textarea readonly class="mt2" style="width:100%;height:130px;background:var(--surface);
     border:1px solid var(--line);border-radius:4px;color:var(--muted);font-family:var(--mono);font-size:10px;padding:8px"
     onfocus="this.select()">${JSON.stringify(S,null,2).replace(/</g,"&lt;")}</textarea>
@@ -432,6 +434,18 @@ document.addEventListener("click",e=>{
   else if(a==="claim"){S.claimed=(S.claimed||0)+1;save();render()}
   else if(a==="roadmap"){showRoadmap=!showRoadmap;render()}
   else if(a==="export"){showExport=!showExport;render()}
+  else if(a==="backup"){
+    const name="stint-"+today+".json";
+    const json=JSON.stringify(S,null,2);
+    const file=(()=>{try{return new File([json],name,{type:"application/json"})}catch(e){return null}})();
+    if(file && navigator.canShare && navigator.canShare({files:[file]})){
+      navigator.share({files:[file],title:name}).catch(()=>{});
+    } else {
+      const url=URL.createObjectURL(new Blob([json],{type:"application/json"}));
+      const a2=document.createElement("a"); a2.href=url; a2.download=name;
+      document.body.appendChild(a2); a2.click(); a2.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),2000);
+    }}
   else if(a==="sample"){
     const seed=[10,10,9,10,9,9,8,9,8,null,8,7,9,7],days={};
     for(let i=0;i<14;i++){if(seed[i]===null)continue;
