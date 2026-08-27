@@ -58,24 +58,23 @@ input{font:inherit;}
 <script>
 /* ---------------- constants ---------------- */
 const KEY = "stint-data-v1";
-const VERSION = "1.6";
+const VERSION = "2.0";
 const BUILT = "2026-08-20";
 const C = {line:"#2C3340",purple:"#A17BFF",green:"#3FBF7F",amber:"#F5A524",red:"#E5484B",
            teal:"#3FB6C4",text:"#E8EAF0",muted:"#79839A",surface:"#1B202B"};
+const noiseCol=n=>[null,"#3FBF7F","#7FC46A","#F5A524","#E88437","#E5484B"][n];
 const glow=(c,s)=>`0 0 ${s*0.5}px ${c}44, 0 0 ${s*1.1}px ${c}1A`;
 const tglow=(c,s)=>`0 0 ${s*0.5}px ${c}66, 0 0 ${s}px ${c}26`;
 
 const DEFAULT_SWAPS=[];   // seeded on the phone, never in this file
 
 const UPGRADES=[
- ["Sleep window","Log lights-out and wake time."],
- ["Trigger tags","Tag a slip with what set it off."],
- ["Movement minutes","One number, minutes moved on purpose."],
+ ["Noise rating","One tap, 1-5, for how loud it got at its worst today."],
  ["BP trend line","Rolling 7-day average with a chart."],
  ["The 20-minute timer","Countdown when a craving hits."],
  ["Weekly review card","Sunday summary of what moved."],
  ["Food anchor","Did you eat a real meal before 10am."],
- ["Correlation view","Drinks vs sleep, sleep vs BP."],
+ ["Correlation view","Noise vs drinks, noise vs sleep, what actually turns it down."],
  ["Cost counter","Dollars and hours reclaimed."],
  ["Streak insurance","Two banked skip days a fortnight."],
  ["One-glance view","Today only, four taps, nothing else."],
@@ -140,12 +139,12 @@ function patch(f){
 /* ---------------- render ---------------- */
 function render(){
   const d=day(), dayN=between(S.start,today)+1;
-  const fortnight=Math.floor((dayN-1)/14)+1;
-  const fnStart=addDays(S.start,(fortnight-1)*14);
+  const cycle=Math.floor((dayN-1)/7)+1;
+  const fnStart=addDays(S.start,(cycle-1)*7);
   let logged=0;
-  for(let i=0;i<14;i++){const ds=addDays(fnStart,i);
+  for(let i=0;i<7;i++){const ds=addDays(fnStart,i);
     if(between(ds,today)>=0 && S.days[ds]&&S.days[ds].touched) logged++;}
-  const canClaim=logged>=10 && (S.claimed||0)<fortnight;
+  const canClaim=logged>=5 && (S.claimed||0)<cycle;
   const up=UPGRADES[Math.min(S.claimed||0,UPGRADES.length-1)];
 
   const strip=[]; for(let i=13;i>=0;i--) strip.push(addDays(today,-i));
@@ -172,7 +171,7 @@ function render(){
   h.push(`<div class="row" style="align-items:flex-end">
     <div><div class="eyebrow">Day</div>
     <div class="mono" style="font-size:40px;font-weight:600;line-height:1;text-shadow:${tglow(C.text,10)}">${String(dayN).padStart(3,"0")}</div></div>
-    <div style="text-align:right"><div class="eyebrow">Fortnight ${fortnight}</div>
+    <div style="text-align:right"><div class="eyebrow">Week ${cycle}</div>
     <div class="mono" style="font-size:13px;color:var(--muted);margin-top:4px">${dayName(today)} · ${today}</div></div>
   </div>`);
 
@@ -328,6 +327,32 @@ function render(){
          </div></div>`}
   </div>`);
 
+  /* noise */
+  const noiseHist=strip.filter(ds=>S.days[ds]&&S.days[ds].noise);
+  h.push(`<div class="card pad mt2">
+    <div class="row" style="align-items:baseline">
+      <span style="font-size:16px">Noise</span>
+      <span class="mono" style="font-size:10px;color:var(--muted)">worst it got today</span></div>
+    <div class="mt3" style="display:flex;gap:6px">
+      ${[1,2,3,4,5].map(n=>{
+        const on=d.noise===n, c=noiseCol(n);
+        return `<button data-act="noise" data-n="${n}" style="flex:1;height:52px;border-radius:4px;
+          border:1px solid ${on?c:C.line};background:${on?c+"22":"var(--surface)"};
+          box-shadow:${on?glow(c,10):"none"};font-family:var(--mono);font-size:19px;
+          color:${on?c:C.muted};text-shadow:${on?tglow(c,10):"none"}">${n}</button>`}).join("")}
+    </div>
+    <div class="row mt2">
+      <span class="mono" style="font-size:10px;color:var(--muted)">1 could settle · 5 nothing worked</span>
+      ${d.noise?`<button class="link" data-act="clearnoise">Clear</button>`:""}
+    </div>
+    ${noiseHist.length?`<div class="chart mt3" style="height:30px">${strip.map(ds=>{
+      const n=S.days[ds]?S.days[ds].noise:null;
+      const hh=n?Math.max(3,(n/5)*28):0, c=n?noiseCol(n):C.line;
+      return `<div style="height:30px"><div style="position:absolute;bottom:0;width:100%;height:${hh}px;
+        background:${c};box-shadow:${hh?glow(c,6):"none"};border-radius:2px;opacity:.9"></div></div>`}).join("")}</div>
+      <div class="mono mt2" style="font-size:10px;color:var(--muted)">last 14 days</div>`:""}
+  </div>`);
+
   /* BP */
   h.push(`<div class="card pad mt2">
     <div class="row"><span style="font-size:16px">Blood pressure</span>
@@ -364,14 +389,14 @@ function render(){
   /* upgrade gate */
   h.push(`<div class="card pad mt6" style="border-color:${canClaim?C.purple:C.line}">
     <div class="row" style="align-items:baseline"><span class="eyebrow">Next upgrade</span>
-      <span class="mono" style="font-size:12px;color:${canClaim?C.purple:C.muted}">${logged}/10 days</span></div>
-    <div class="mt3" style="display:flex;gap:4px">${Array.from({length:10}).map((_,i)=>
+      <span class="mono" style="font-size:12px;color:${canClaim?C.purple:C.muted}">${logged}/5 days</span></div>
+    <div class="mt3" style="display:flex;gap:4px">${Array.from({length:5}).map((_,i)=>
       `<div style="flex:1;height:4px;border-radius:2px;background:${i<logged?C.purple:C.line};
         box-shadow:${i<logged?glow(C.purple,6):"none"}"></div>`).join("")}</div>
     <div class="mt4"><div style="font-size:16px;color:${canClaim?C.text:C.muted}">${(S.claimed||0)+1}. ${up[0]}</div>
       <div style="font-size:14px;color:var(--muted);margin-top:4px;line-height:1.5">${up[1]}</div></div>
     ${canClaim?`<button class="btn-primary mt4" data-act="claim">Unlocked — ask Claude to build it</button>`
-      :`<div class="mono mt4" style="font-size:11px;color:var(--muted)">${10-logged} more logged days this fortnight.</div>`}
+      :`<div class="mono mt4" style="font-size:11px;color:var(--muted)">${5-logged} more logged days this week.</div>`}
     <button class="link mt3" data-act="roadmap">${showRoadmap?"Hide":"See"} all 12</button>
     ${showRoadmap?`<div class="mt3">${UPGRADES.map((u,i)=>`<div style="display:flex;gap:12px;padding:8px 0;
       border-top:1px solid var(--line);opacity:${i<(S.claimed||0)?.45:1}">
@@ -473,6 +498,8 @@ document.addEventListener("click",e=>{
   if(a==="med") patch({[b.dataset.k]: !(d[b.dataset.k]??d.meds)});
   else if(a==="wegovy") patch({wegovy:!d.wegovy});
   else if(a==="teeth") patch({[b.dataset.k]: !d[b.dataset.k]});
+  else if(a==="noise") patch({noise:parseInt(b.dataset.n,10)});
+  else if(a==="clearnoise") patch({noise:null});
   else if(a==="dminus") patch({drinks:Math.max(0,(d.drinks||0)-1)});
   else if(a==="dplus") patch({drinks:(d.drinks||0)+1});
   else if(a==="dzero") patch({drinks:0});
