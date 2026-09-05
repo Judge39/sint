@@ -58,7 +58,7 @@ input{font:inherit;}
 <script>
 /* ---------------- constants ---------------- */
 const KEY = "stint-data-v1";
-const VERSION = "2.0";
+const VERSION = "2.1";
 const BUILT = "2026-08-20";
 const C = {line:"#2C3340",purple:"#A17BFF",green:"#3FBF7F",amber:"#F5A524",red:"#E5484B",
            teal:"#3FB6C4",text:"#E8EAF0",muted:"#79839A",surface:"#1B202B"};
@@ -365,6 +365,54 @@ function render(){
           border:1px solid var(--line);border-radius:4px;font-size:11px;letter-spacing:.12em">ADD</button></div>`}
     </div>
     <div class="mono mt2" style="font-size:11px;color:var(--muted)">Optional — take it when you take it.</div></div>`);
+
+  /* BP trend */
+  const bpAll=Object.keys(S.days).filter(k=>S.days[k].bp).sort();
+  if(bpAll.length>=2){
+    const pts=bpAll.map(k=>({d:k,s:S.days[k].bp[0],p:S.days[k].bp[1]}));
+    const avg=arr=>arr.length?Math.round(arr.reduce((a,b)=>a+b,0)/arr.length):null;
+    const recent=pts.filter(p=>between(p.d,today)<=7);
+    const prior=pts.filter(p=>between(p.d,today)>7&&between(p.d,today)<=14);
+    const rs=avg(recent.map(p=>p.s)), rp=avg(recent.map(p=>p.p));
+    const ps=avg(prior.map(p=>p.s)), pp=avg(prior.map(p=>p.p));
+    const show=pts.slice(-20);
+    const sysVals=show.map(p=>p.s), diaVals=show.map(p=>p.p);
+    const lo=Math.min.apply(null,diaVals)-8, hi=Math.max.apply(null,sysVals)+8, span=Math.max(hi-lo,1);
+    const H=76;
+    const xy=(v,i)=>[(i/(Math.max(show.length-1,1)))*100, H-((v-lo)/span)*H];
+    const path=vals=>vals.map((v,i)=>{const a=xy(v,i);return (i?"L":"M")+a[0].toFixed(1)+" "+a[1].toFixed(1)}).join(" ");
+    const line=y=>H-((y-lo)/span)*H;
+    const ds_=(rs!==null&&ps!==null)?rs-ps:null;
+    const dp_=(rp!==null&&pp!==null)?rp-pp:null;
+    h.push(`<div class="card pad mt6">
+      <div class="row" style="align-items:baseline">
+        <span class="eyebrow">Blood pressure</span>
+        <span class="mono" style="font-size:10px;color:var(--muted)">${pts.length} readings</span></div>
+      <div class="row mt2" style="align-items:flex-end">
+        <div class="mono" style="font-size:34px;line-height:1;font-weight:600;text-shadow:${tglow(C.text,10)}">
+          ${rs||"—"}<span style="font-size:20px;color:var(--muted)">/${rp||"—"}</span></div>
+        ${ds_!==null?`<div style="text-align:right">
+          <div class="mono" style="font-size:17px;line-height:1;color:${ds_<=0?C.green:C.amber}">
+            ${ds_>0?"+":""}${ds_}/${dp_>0?"+":""}${dp_}</div>
+          <div class="eyebrow" style="font-size:9px;margin-top:4px">vs week before</div></div>`:""}
+      </div>
+      <div class="mono mt2" style="font-size:10px;color:var(--muted)">7-day average</div>
+      <svg viewBox="0 0 100 ${H}" preserveAspectRatio="none" style="width:100%;height:96px;margin-top:12px;overflow:visible">
+        ${[140,130,120,90,80].filter(v=>v>lo&&v<hi).map(v=>
+          `<line x1="0" y1="${line(v).toFixed(1)}" x2="100" y2="${line(v).toFixed(1)}"
+            stroke="${C.line}" stroke-width="0.5" vector-effect="non-scaling-stroke"/>`).join("")}
+        <path d="${path(sysVals)}" fill="none" stroke="${C.amber}" stroke-width="2"
+          vector-effect="non-scaling-stroke" stroke-linejoin="round"/>
+        <path d="${path(diaVals)}" fill="none" stroke="${C.teal}" stroke-width="2"
+          vector-effect="non-scaling-stroke" stroke-linejoin="round"/>
+      </svg>
+      <div class="row mt2">
+        <span class="mono" style="font-size:10px;color:${C.amber}">systolic</span>
+        <span class="mono" style="font-size:10px;color:${C.teal}">diastolic</span></div>
+      <div class="mono mt2" style="font-size:10px;color:var(--muted)">
+        ${show[0].d.slice(5)} to ${show[show.length-1].d.slice(5)}</div>
+    </div>`);
+  }
 
   /* strip */
   h.push(`<div class="row mt6" style="align-items:baseline">
