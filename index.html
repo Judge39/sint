@@ -58,8 +58,9 @@ input{font:inherit;}
 <script>
 /* ---------------- constants ---------------- */
 const KEY = "stint-data-v1";
-const VERSION = "2.1";
-const BUILT = "2026-08-20";
+const VERSION = "2.3";
+const BUILT = "2026-09-19";
+
 const C = {line:"#2C3340",purple:"#A17BFF",green:"#3FBF7F",amber:"#F5A524",red:"#E5484B",
            teal:"#3FB6C4",text:"#E8EAF0",muted:"#79839A",surface:"#1B202B"};
 const noiseCol=n=>[null,"#3FBF7F","#7FC46A","#F5A524","#E88437","#E5484B"][n];
@@ -71,7 +72,6 @@ const DEFAULT_SWAPS=[];   // seeded on the phone, never in this file
 const UPGRADES=[
  ["Noise rating","One tap, 1-5, for how loud it got at its worst today."],
  ["BP trend line","Rolling 7-day average with a chart."],
- ["The 20-minute timer","Countdown when a craving hits."],
  ["Weekly review card","Sunday summary of what moved."],
  ["Food anchor","Did you eat a real meal before 10am."],
  ["Correlation view","Noise vs drinks, noise vs sleep, what actually turns it down."],
@@ -111,10 +111,13 @@ let S=load();
 /* ---------------- session state ---------------- */
 let picked=null, rerolls=0, editSwaps=false, editTaper=false, editLabels=false,
     showRoadmap=false, showExport=false, confirmWipe=false;
-const today=iso(new Date());
+function logicalToday(){const n=new Date(); if(n.getHours()<4) n.setDate(n.getDate()-1); return iso(n)}
+const today=logicalToday();
+let viewDate=today;
+let showReview=false;
 
 /* ---------------- derived ---------------- */
-const day=()=>S.days[today]||{};
+const day=()=>S.days[viewDate]||{};
 const swaps=()=>S.swaps||DEFAULT_SWAPS;
 function targetFor(ds){
   if(!S.taper) return null;
@@ -132,7 +135,7 @@ function sectorColor(ds){
   return g>=6?C.purple:g>=4?C.green:g>=2?C.amber:C.red;
 }
 function patch(f){
-  S.days[today]=Object.assign({},day(),f,{touched:true});
+  S.days[viewDate]=Object.assign({},day(),f,{touched:true});
   save(); render();
 }
 
@@ -151,9 +154,9 @@ function render(){
   const y1=S.days[addDays(today,-1)], y2=S.days[addDays(today,-2)];
   const blackFlag=!(y1&&y1.touched)&&!(y2&&y2.touched)&&dayN>3;
 
-  const t=targetFor(today);
+  const t=targetFor(viewDate);
   const delta=(t!==null&&typeof d.drinks==="number")?d.drinks-t:null;
-  const nextStep=S.taper? S.taper.everyDays-(between(S.taper.startDate,today)%S.taper.everyDays)-1:null;
+  const nextStep=S.taper? S.taper.everyDays-(between(S.taper.startDate,viewDate)%S.taper.everyDays)-1:null;
 
   const wDays=Object.keys(S.days).filter(k=>S.days[k].wegovy).sort();
   const lastW=wDays.length?wDays[wDays.length-1]:null;
@@ -174,6 +177,17 @@ function render(){
     <div style="text-align:right"><div class="eyebrow">Week ${cycle}</div>
     <div class="mono" style="font-size:13px;color:var(--muted);margin-top:4px">${dayName(today)} · ${today}</div></div>
   </div>`);
+
+  const backN=between(viewDate,today);
+  h.push(`<div class="row mt3 card" style="padding:8px 10px">
+    <button data-act="prevday" style="padding:8px 14px;font-family:var(--mono);font-size:16px;color:var(--text)">&lsaquo;</button>
+    <div style="text-align:center">
+      <div class="mono" style="font-size:13px;color:${backN?C.amber:C.text}">
+        ${backN===0?"Today":backN===1?"Yesterday":dayName(viewDate)+" "+viewDate.slice(5)}</div>
+      ${backN?`<div class="eyebrow" style="font-size:9px;margin-top:2px;color:${C.amber}">editing a past day</div>`:""}
+    </div>
+    <button data-act="nextday" style="padding:8px 14px;font-family:var(--mono);font-size:16px;
+      color:${backN?C.text:C.line}">&rsaquo;</button></div>`);
 
   if(!storageOk) h.push(`<div class="card pad mt3" style="border-color:${C.red};background:#241315">
     <div class="eyebrow" style="color:${C.red}">Not saving</div>
@@ -414,6 +428,59 @@ function render(){
     </div>`);
   }
 
+  /* weekly review */
+  const win=n=>{const a=[];for(let i=0;i<7;i++)a.push(addDays(today,-(i+n*7)));return a};
+  const sum=(arr,f)=>arr.reduce((s,k)=>s+(f(S.days[k]||{})||0),0);
+  const wk=win(0), pv=win(1);
+  const drinksIn=a=>a.filter(k=>typeof (S.days[k]||{}).drinks==="number");
+  const dW=drinksIn(wk), dP=drinksIn(pv);
+  const totW=sum(dW,x=>x.drinks), totP=sum(dP,x=>x.drinks);
+  const onPlanW=dW.filter(k=>{const tt=targetFor(k);return tt===null?S.days[k].drinks===0:S.days[k].drinks<=tt}).length;
+  const noiseW=wk.filter(k=>(S.days[k]||{}).noise), noiseP=pv.filter(k=>(S.days[k]||{}).noise);
+  const nAvg=a=>a.length?(sum(a,x=>x.noise)/a.length):null;
+  const nW=nAvg(noiseW), nP=nAvg(noiseP);
+  const slots=k=>{const x=S.days[k]||{};return ((x.medsAM??x.meds)?1:0)+((x.medsPM??x.meds)?1:0)};
+  const medsW=wk.reduce((s,k)=>s+slots(k),0);
+  const teethW=wk.reduce((s,k)=>{const x=S.days[k]||{};return s+(x.teethAM?1:0)+(x.teethPM?1:0)},0);
+  const swapsW=wk.filter(k=>(S.days[k]||{}).swap).length;
+  const loggedW=wk.filter(k=>(S.days[k]||{}).touched).length;
+  const arrow=(now,before,goodDown)=>{
+    if(now===null||before===null||!before) return "";
+    const diff=now-before; if(Math.abs(diff)<0.05) return `<span style="color:${C.muted}"> same</span>`;
+    const good=goodDown?diff<0:diff>0;
+    const v=Math.abs(diff)<1?Math.abs(diff).toFixed(1):Math.round(Math.abs(diff));
+    return `<span style="color:${good?C.green:C.amber}"> ${diff<0?"↓":"↑"}${v}</span>`;
+  };
+  h.push(`<div class="card pad mt6">
+    <div class="row" style="align-items:baseline">
+      <span class="eyebrow">Last 7 days</span>
+      <button class="link" data-act="review">${showReview?"Less":"More"}</button></div>
+    <div class="row mt3" style="align-items:flex-end">
+      <div><div class="eyebrow" style="font-size:9px">Drinks</div>
+        <div class="mono" style="font-size:30px;line-height:1;margin-top:4px">${totW}${arrow(totW,totP,true)}</div></div>
+      <div style="text-align:right"><div class="eyebrow" style="font-size:9px">On plan</div>
+        <div class="mono" style="font-size:22px;line-height:1;margin-top:4px;color:${onPlanW===dW.length&&dW.length?C.green:C.text}">
+          ${dW.length?onPlanW+"/"+dW.length:"—"}</div></div>
+    </div>
+    ${showReview?`
+      <div class="mt4">
+        ${[["Days logged",loggedW+"/7",""],
+           ["Meds taken",medsW+"/14",""],
+           ["Brushed",teethW+"/14",""],
+           ["Swaps done",swapsW+"/7",""],
+           ["Avg noise",nW===null?"—":nW.toFixed(1),nW===null?"":arrow(nW,nP,true)]]
+          .map(r=>`<div class="row" style="padding:9px 0;border-top:1px solid var(--line)">
+            <span style="font-size:14px;color:var(--muted)">${r[0]}</span>
+            <span class="mono" style="font-size:15px">${r[1]}${r[2]}</span></div>`).join("")}
+      </div>
+      <div class="mt3" style="font-size:13px;color:var(--muted);line-height:1.55">
+        ${loggedW<4?"Not enough logged days this week to read much into it."
+          :onPlanW===dW.length&&dW.length?"Every logged day on or under target. That's the week working."
+          :onPlanW>=dW.length-1?"One day over. Noise, not a trend."
+          :"More days over target than under. Worth a look at which days, and what else was happening on them."}
+      </div>`:""}
+  </div>`);
+
   /* strip */
   h.push(`<div class="row mt6" style="align-items:baseline">
     <span class="eyebrow">Last 14 days</span>
@@ -421,7 +488,7 @@ function render(){
     <div class="strip mt2">${strip.map(ds=>{
       const c=sectorColor(ds), on=S.days[ds]&&S.days[ds].touched;
       return `<div style="background:${c};opacity:${on?1:.5};box-shadow:${on?glow(c,8):"none"};
-        outline:${ds===today?"2px solid "+C.text:"none"};outline-offset:1px"></div>`}).join("")}</div>`);
+        outline:${ds===viewDate?"2px solid "+C.text:"none"};outline-offset:1px"></div>`}).join("")}</div>`);
 
   /* stats */
   h.push(`<div class="eyebrow mt6">Last 28 days</div>
@@ -543,7 +610,9 @@ async function doBackup(){
 document.addEventListener("click",e=>{
   const b=e.target.closest("[data-act]"); if(!b) return;
   const a=b.dataset.act, d=day();
-  if(a==="med") patch({[b.dataset.k]: !(d[b.dataset.k]??d.meds)});
+  if(a==="prevday"){ if(between(viewDate,today)<13){viewDate=addDays(viewDate,-1);render()} }
+  else if(a==="nextday"){ if(viewDate!==today){viewDate=addDays(viewDate,1);render()} }
+  else if(a==="med") patch({[b.dataset.k]: !(d[b.dataset.k]??d.meds)});
   else if(a==="wegovy") patch({wegovy:!d.wegovy});
   else if(a==="teeth") patch({[b.dataset.k]: !d[b.dataset.k]});
   else if(a==="noise") patch({noise:parseInt(b.dataset.n,10)});
@@ -581,6 +650,7 @@ document.addEventListener("click",e=>{
     di=parseInt(document.getElementById("dia").value,10);
     if(s&&di) patch({bp:[s,di]});}
   else if(a==="claim"){S.claimed=(S.claimed||0)+1;save();render()}
+  else if(a==="review"){showReview=!showReview;render()}
   else if(a==="roadmap"){showRoadmap=!showRoadmap;render()}
   else if(a==="export"){showExport=!showExport;render()}
   else if(a==="restore"){showRestore=!showRestore;pendingRestore=null;restoreMsg="";render()}
