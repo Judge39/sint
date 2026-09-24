@@ -58,8 +58,8 @@ input{font:inherit;}
 <script>
 /* ---------------- constants ---------------- */
 const KEY = "stint-data-v1";
-const VERSION = "2.3";
-const BUILT = "2026-09-19";
+const VERSION = "2.4";
+const BUILT = "2026-09-24";
 
 const C = {line:"#2C3340",purple:"#A17BFF",green:"#3FBF7F",amber:"#F5A524",red:"#E5484B",
            teal:"#3FB6C4",text:"#E8EAF0",muted:"#79839A",surface:"#1B202B"};
@@ -131,8 +131,8 @@ function sectorColor(ds){
   const am=(d.medsAM??d.meds)?1:0, pm=(d.medsPM??d.meds)?1:0;
   const t=targetFor(ds);
   const on=typeof d.drinks==="number" && (t===null? d.drinks===0 : d.drinks<=t);
-  const g=am+pm+(on?1:0)+(d.swap?1:0)+(d.teethAM?1:0)+(d.teethPM?1:0);
-  return g>=6?C.purple:g>=4?C.green:g>=2?C.amber:C.red;
+  const g=am+pm+(on?1:0)+(d.swap?1:0)+(d.teethAM?1:0)+(d.teethPM?1:0)+(d.food?1:0);
+  return g>=7?C.purple:g>=5?C.green:g>=3?C.amber:C.red;
 }
 function patch(f){
   S.days[viewDate]=Object.assign({},day(),f,{touched:true});
@@ -230,6 +230,14 @@ function render(){
   };
   h.push(`<div class="mt2" style="display:flex;gap:8px">
     ${teeth("teethAM","Brush · morning")}${teeth("teethPM","Brush · night")}</div>`);
+  h.push(`<button data-act="food" style="width:100%;margin-top:8px;padding:0 16px;height:56px;
+    display:flex;align-items:center;justify-content:space-between;border-radius:4px;
+    border:1px solid ${d.food?C.teal:C.line};background:${d.food?"#12262B":"var(--surface)"};
+    box-shadow:${d.food?glow(C.teal,10):"none"}">
+    <span style="font-size:14px">Ate something real before 10am</span>
+    <span class="mono" style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+      color:${d.food?C.teal:C.muted};text-shadow:${d.food?tglow(C.teal,8):"none"}">${d.food?"Yes":"—"}</span>
+  </button>`);
   h.push(`<div class="row mt2"><span></span><button class="link" data-act="editlabels">${editLabels?"Done":"Edit med names"}</button></div>`);
   if(editLabels) h.push(`<div class="card pad mt2">
     <div style="font-size:13px;color:var(--muted);line-height:1.5">Stored on this phone only. Never written to the hosted file.</div>
@@ -443,6 +451,7 @@ function render(){
   const medsW=wk.reduce((s,k)=>s+slots(k),0);
   const teethW=wk.reduce((s,k)=>{const x=S.days[k]||{};return s+(x.teethAM?1:0)+(x.teethPM?1:0)},0);
   const swapsW=wk.filter(k=>(S.days[k]||{}).swap).length;
+  const foodW=wk.filter(k=>(S.days[k]||{}).food).length;
   const loggedW=wk.filter(k=>(S.days[k]||{}).touched).length;
   const arrow=(now,before,goodDown)=>{
     if(now===null||before===null||!before) return "";
@@ -467,6 +476,7 @@ function render(){
         ${[["Days logged",loggedW+"/7",""],
            ["Meds taken",medsW+"/14",""],
            ["Brushed",teethW+"/14",""],
+           ["Ate early",foodW+"/7",""],
            ["Swaps done",swapsW+"/7",""],
            ["Avg noise",nW===null?"—":nW.toFixed(1),nW===null?"":arrow(nW,nP,true)]]
           .map(r=>`<div class="row" style="padding:9px 0;border-top:1px solid var(--line)">
@@ -614,6 +624,7 @@ document.addEventListener("click",e=>{
   else if(a==="nextday"){ if(viewDate!==today){viewDate=addDays(viewDate,1);render()} }
   else if(a==="med") patch({[b.dataset.k]: !(d[b.dataset.k]??d.meds)});
   else if(a==="wegovy") patch({wegovy:!d.wegovy});
+  else if(a==="food") patch({food:!d.food});
   else if(a==="teeth") patch({[b.dataset.k]: !d[b.dataset.k]});
   else if(a==="noise") patch({noise:parseInt(b.dataset.n,10)});
   else if(a==="clearnoise") patch({noise:null});
