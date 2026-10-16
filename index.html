@@ -58,8 +58,8 @@ input{font:inherit;}
 <script>
 /* ---------------- constants ---------------- */
 const KEY = "stint-data-v1";
-const VERSION = "2.4";
-const BUILT = "2026-09-24";
+const VERSION = "2.5";
+const BUILT = "2026-10-17";
 
 const C = {line:"#2C3340",purple:"#A17BFF",green:"#3FBF7F",amber:"#F5A524",red:"#E5484B",
            teal:"#3FB6C4",text:"#E8EAF0",muted:"#79839A",surface:"#1B202B"};
@@ -74,7 +74,7 @@ const UPGRADES=[
  ["BP trend line","Rolling 7-day average with a chart."],
  ["Weekly review card","Sunday summary of what moved."],
  ["Food anchor","Did you eat a real meal before 10am."],
- ["Correlation view","Noise vs drinks, noise vs sleep, what actually turns it down."],
+ ["Correlation view","What your noise actually tracks with."],
  ["Cost counter","Dollars and hours reclaimed."],
  ["Streak insurance","Two banked skip days a fortnight."],
  ["One-glance view","Today only, four taps, nothing else."],
@@ -490,6 +490,90 @@ function render(){
           :"More days over target than under. Worth a look at which days, and what else was happening on them."}
       </div>`:""}
   </div>`);
+
+  /* correlation */
+  const allDays=Object.keys(S.days).sort();
+  const pair=allDays.filter(k=>{const x=S.days[k];return x.noise&&typeof x.drinks==="number"});
+  const MINP=6;
+  const mean=a=>a.length?a.reduce((s,v)=>s+v,0)/a.length:null;
+  const fmt=v=>v===null?"—":v.toFixed(1);
+  const onTarget=k=>{const tt=targetFor(k);const v=S.days[k].drinks;
+    return tt===null?v===0:v<=tt};
+
+  h.push(`<div class="card pad mt6">
+    <div class="row" style="align-items:baseline">
+      <span class="eyebrow">What noise tracks with</span>
+      <span class="mono" style="font-size:10px;color:var(--muted)">${pair.length} paired days</span></div>`);
+
+  if(pair.length<MINP){
+    h.push(`<div class="mt3" style="font-size:14px;color:var(--muted);line-height:1.55">
+      Needs ${MINP-pair.length} more day${MINP-pair.length===1?"":"s"} with both a noise rating and a drink count.
+      Until then there's nothing here worth reading.</div></div>`);
+  } else {
+    const over=pair.filter(k=>!onTarget(k)), under=pair.filter(k=>onTarget(k));
+    const nOver=mean(over.map(k=>S.days[k].noise)), nUnder=mean(under.map(k=>S.days[k].noise));
+
+    // next-day effect: noise the day AFTER a drinking day
+    const nextPairs=allDays.filter(k=>typeof (S.days[k]||{}).drinks==="number")
+      .map(k=>({k,n:(S.days[addDays(k,1)]||{}).noise,over:!onTarget(k)}))
+      .filter(x=>x.n);
+    const afterOver=mean(nextPairs.filter(x=>x.over).map(x=>x.n));
+    const afterUnder=mean(nextPairs.filter(x=>!x.over).map(x=>x.n));
+
+    // swap days
+    const sw=pair.filter(k=>S.days[k].swap), nosw=pair.filter(k=>!S.days[k].swap);
+    const nSw=mean(sw.map(k=>S.days[k].noise)), nNoSw=mean(nosw.map(k=>S.days[k].noise));
+
+    const bar=(label,a,an,b,bn,aLab,bLab)=>{
+      if(a===null||b===null||an<2||bn<2) return `<div class="row" style="padding:10px 0;border-top:1px solid var(--line)">
+        <span style="font-size:14px;color:var(--muted)">${label}</span>
+        <span class="mono" style="font-size:12px;color:var(--muted)">not enough days yet</span></div>`;
+      const diff=a-b, worse=diff>0.3, better=diff<-0.3;
+      const col=worse?C.amber:better?C.green:C.muted;
+      return `<div style="padding:12px 0;border-top:1px solid var(--line)">
+        <div class="row"><span style="font-size:14px">${label}</span>
+          <span class="mono" style="font-size:15px;color:${col}">
+            ${diff>0?"+":""}${diff.toFixed(1)}</span></div>
+        <div class="row mt2">
+          <span class="mono" style="font-size:11px;color:var(--muted)">${aLab} ${fmt(a)} (${an}d)</span>
+          <span class="mono" style="font-size:11px;color:var(--muted)">${bLab} ${fmt(b)} (${bn}d)</span></div></div>`;
+    };
+
+    h.push(`<div class="mt3">
+      ${bar("Noise, same day", nOver, over.length, nUnder, under.length, "over target", "on plan")}
+      ${bar("Noise, day after", afterOver, nextPairs.filter(x=>x.over).length,
+             afterUnder, nextPairs.filter(x=>!x.over).length, "after over", "after on plan")}
+      ${bar("Noise on swap days", nNoSw, nosw.length, nSw, sw.length, "no swap", "did swap")}
+    </div>`);
+
+    // scatter once there is enough to look at
+    if(pair.length>=10){
+      const maxD=Math.max.apply(null,pair.map(k=>S.days[k].drinks),1);
+      h.push(`<div class="eyebrow mt4" style="font-size:9px">Each day: drinks across, noise up</div>
+        <svg viewBox="0 0 100 60" preserveAspectRatio="none"
+          style="width:100%;height:120px;margin-top:10px;overflow:visible">
+          ${[1,2,3,4,5].map(n=>`<line x1="0" y1="${(60-((n-1)/4)*56-2).toFixed(1)}" x2="100"
+            y2="${(60-((n-1)/4)*56-2).toFixed(1)}" stroke="${C.line}" stroke-width="0.4"
+            vector-effect="non-scaling-stroke"/>`).join("")}
+          ${pair.map(k=>{
+            const x=(S.days[k].drinks/maxD)*96+2, y=60-((S.days[k].noise-1)/4)*56-2;
+            return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="4"
+              fill="${noiseCol(S.days[k].noise)}" opacity="0.75"
+              vector-effect="non-scaling-stroke"/>`}).join("")}
+        </svg>
+        <div class="row mt2"><span class="mono" style="font-size:10px;color:var(--muted)">0 drinks</span>
+          <span class="mono" style="font-size:10px;color:var(--muted)">${maxD}</span></div>`);
+    }
+
+    const gap=(nOver!==null&&nUnder!==null)?nOver-nUnder:null;
+    h.push(`<div class="mt3" style="font-size:13px;color:var(--muted);line-height:1.55">
+      ${pair.length<12?"Early days — treat this as a hint, not a finding."
+        :gap===null?"Not enough on both sides to compare yet."
+        :gap>0.5?"Your louder days are also your heavier days. Which way that runs, this can't tell you."
+        :gap<-0.5?"Noise runs higher on your lighter days, which is what self-medication looks like from the outside. Worth raising with whoever manages the ADHD side."
+        :"No clear split between heavy and light days so far."}
+    </div></div>`);
+  }
 
   /* strip */
   h.push(`<div class="row mt6" style="align-items:baseline">
